@@ -56,6 +56,16 @@ import {
 } from './supabase';
 
 export default function App() {
+  // Check if we are an OAuth callback inside a popup window
+  const isOAuthCallbackPopup = useMemo(() => {
+    return Boolean(
+      window.opener && 
+      (window.location.hash.includes('access_token') || 
+       window.location.hash.includes('id_token') || 
+       window.location.search.includes('code='))
+    );
+  }, []);
+
   // --- Authentication States ---
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem('dentlab_logged_in') === 'true';
@@ -384,6 +394,56 @@ export default function App() {
     message?: string;
   }>({ status: 'loading' });
 
+  // Helper to remove OAuth hash tokens from the address bar to prevent redirection/render loops
+  const clearUrlAuthHash = () => {
+    if (window.location.hash && (
+      window.location.hash.includes('access_token') || 
+      window.location.hash.includes('id_token') || 
+      window.location.hash.includes('refresh_token') || 
+      window.location.hash.includes('token_type')
+    )) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  };
+
+  // Handle popup window automated settlement and closure
+  useEffect(() => {
+    if (isOAuthCallbackPopup) {
+      const timeout = setTimeout(() => {
+        try {
+          if (window.opener) {
+            window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+          }
+        } catch (e) {
+          console.error('Error sending postMessage to parent:', e);
+        }
+        window.close();
+      }, 1500);
+      return () => clearTimeout(timeout);
+    }
+  }, [isOAuthCallbackPopup]);
+
+  // Handle cross-window message listeners for the parent context
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        setAuthSuccess('Autenticação com Google efetuada com sucesso!');
+        if (isSupabaseConfigured && supabase) {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user?.email) {
+              setIsLoggedIn(true);
+              setCurrentUserEmail(session.user.email);
+              localStorage.setItem('dentlab_logged_in', 'true');
+              localStorage.setItem('dentlab_current_user_email', session.user.email);
+            }
+          });
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
   // Listen to Supabase Auth state changes (useful for Google OAuth logins and page refreshes)
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
@@ -395,6 +455,9 @@ export default function App() {
         setCurrentUserEmail(session.user.email);
         localStorage.setItem('dentlab_logged_in', 'true');
         localStorage.setItem('dentlab_current_user_email', session.user.email);
+        
+        // Remove OAuth tokens from address bar to avoid loops
+        clearUrlAuthHash();
       }
     });
 
@@ -405,6 +468,9 @@ export default function App() {
         setCurrentUserEmail(session.user.email);
         localStorage.setItem('dentlab_logged_in', 'true');
         localStorage.setItem('dentlab_current_user_email', session.user.email);
+        
+        // Remove OAuth tokens from address bar to avoid loops
+        clearUrlAuthHash();
       } else if (event === 'SIGNED_OUT') {
         setIsLoggedIn(false);
         setCurrentUserEmail('');
@@ -991,6 +1057,21 @@ export default function App() {
     setSelectedDentistId(dentistId);
     setActiveTab('dentistas');
   };
+
+  if (isOAuthCallbackPopup) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-6 font-sans select-none">
+        <div className="text-center space-y-4 max-w-sm p-8 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl">
+          <div className="w-12 h-12 border-4 border-t-teal-400 border-r-teal-500 border-b-slate-800 border-l-slate-800 rounded-full animate-spin mx-auto"></div>
+          <h2 className="text-lg font-bold text-white">Autenticando via Google...</h2>
+          <p className="text-xs text-slate-400">Esta janela se fechará automaticamente para sincronizar seu acesso ao sistema principal.</p>
+          <div className="pt-2">
+            <span className="text-[10px] text-teal-400 font-bold bg-teal-500/10 px-2.5 py-1 rounded-full border border-teal-500/20">DentLab Pro Security</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center justify-start p-2 sm:p-6 select-none font-sans">
