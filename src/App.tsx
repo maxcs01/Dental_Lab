@@ -1122,7 +1122,15 @@ export default function App() {
                             setAuthSuccess('');
                             try {
                               setIsSupabaseSyncing(true);
-                              await signInWithGoogleAuth();
+                              const result = await signInWithGoogleAuth();
+                              if (result && result.url) {
+                                const newWindow = window.open(result.url, '_blank');
+                                if (!newWindow) {
+                                  throw new Error('Bloqueador de popups detectado! Por favor, ative as permissões de popups deste navegador para realizar o login com o Google.');
+                                }
+                              } else {
+                                throw new Error('O Supabase não retornou uma URL de login Google válida.');
+                              }
                             } catch (err: any) {
                               console.error('Google authorization error:', err);
                               setAuthError(`Não foi possível logar com Google: ${err?.message || 'Tente novamente.'}`);
