@@ -1,0 +1,6 @@
+{
+  "name": "DentLab Pro",
+  "description": "Sistema de gestão financeira e controle de trabalhos para laboratórios de prótese e mecânica dentária.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
